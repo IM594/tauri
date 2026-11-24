@@ -1,0 +1,38 @@
+name: origin slash check
+
+on:
+  push:
+    branches:
+      - test/origin-slash-windows
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [pr, origin]
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Move the trailing slash into protocol::origin
+        if: matrix.variant == 'origin'
+        shell: bash
+        run: |
+          sed -i 's|{http}://{scheme}.localhost")|{http}://{scheme}.localhost/")|; s|{scheme}://localhost")|{scheme}://localhost/")|' crates/tauri/src/protocol/mod.rs
+          sed -i 's|Url::parse(&format!("{}/", crate::protocol::origin("tauri", https)))|Url::parse(\&crate::protocol::origin("tauri", https))|' crates/tauri/src/manager/mod.rs
+          git diff --stat
+          test "$(git diff --name-only | wc -l)" -eq 2
+      - name: Build
+        run: cargo build --example helloworld
+      - name: Run
+        shell: bash
+        run: |
+          set +e
+          ./target/debug/examples/helloworld.exe > run.log 2>&1
+          code=$?
+          cat run.log
+          echo "## ${{ matrix.variant }} (exit $code)" >> "$GITHUB_STEP_SUMMARY"
+          grep REPORT run.log | sed 's/^/    /' >> "$GITHUB_STEP_SUMMARY"
+          exit $code
